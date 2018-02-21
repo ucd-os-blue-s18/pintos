@@ -6,11 +6,9 @@
 				   
 ---- GROUP ----
 
->> Fill in the names and email addresses of your group members.
+Teo Price-Broncucia <teo.price-broncucia@ucdenver.edu>
 
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
+Aaron Roberts <aaron.roberts@ucdenver.edu>
 
 ---- PRELIMINARIES ----
 
