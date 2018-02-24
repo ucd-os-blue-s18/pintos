@@ -71,8 +71,10 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
-// New functions
-void thread_priority_compare(struct thread *t, void *aux);
+// Functions added for priority scheduler
+bool priority_less (const struct list_elem *a,
+                    const struct list_elem *b,
+                    void *aux UNUSED);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -340,6 +342,7 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  thread_yield ();
 }
 
 /* Returns the current thread's priority. */
@@ -486,9 +489,10 @@ alloc_frame (struct thread *t, size_t size)
   return t->stack;
 }
 
+// Priority comparator for list
 bool priority_less (const struct list_elem *a,
                     const struct list_elem *b,
-                    void *aux)
+                    void *aux UNUSED)
 {
   struct thread *ta = list_entry (a, struct thread, elem);
   struct thread *tb = list_entry (b, struct thread, elem);
