@@ -115,14 +115,10 @@ sema_up (struct semaphore *sema)
   old_level = intr_disable ();
   if (!list_empty (&sema->waiters)) 
   {
-    struct list_elem *max_elem = list_max (&sema->waiters, priority_less, NULL); 
-    struct thread *max_priority_thread = 
-      list_entry (max_elem, struct thread, elem);
-    list_remove (max_elem);
+    struct thread *max_priority_thread = get_max_priority_thread (&sema->waiters);
+    list_remove (&max_priority_thread->elem);
     thread_unblock (max_priority_thread);
   }
-    // thread_unblock (list_entry (list_pop_front (&sema->waiters),
-    //                             struct thread, elem));
   sema->value++;
   intr_set_level (old_level);
   thread_yield ();
@@ -309,6 +305,21 @@ cond_wait (struct condition *cond, struct lock *lock)
   lock_acquire (lock);
 }
 
+static bool
+cond_priority_less (const struct list_elem *a,
+                    const struct list_elem *b,
+                    void *aux UNUSED)
+{
+  struct semaphore_elem *sa = list_entry (a, struct semaphore_elem, elem);
+  struct semaphore_elem *sb = list_entry (b, struct semaphore_elem, elem);
+
+  struct thread *max_priority_thread_a = get_max_priority_thread (&sa->semaphore.waiters);
+  struct thread *max_priority_thread_b = get_max_priority_thread (&sb->semaphore.waiters);
+
+  return (max_priority_thread_a->priority < max_priority_thread_b->priority)
+   ? true : false;
+}
+
 /* If any threads are waiting on COND (protected by LOCK), then
    this function signals one of them to wake up from its wait.
    LOCK must be held before calling this function.
@@ -325,8 +336,12 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (lock_held_by_current_thread (lock));
 
   if (!list_empty (&cond->waiters)) 
-    sema_up (&list_entry (list_pop_front (&cond->waiters),
+  {
+    struct list_elem *max_elem = list_max (&cond->waiters, cond_priority_less, NULL);
+    list_remove (max_elem);
+    sema_up (&list_entry (max_elem,
                           struct semaphore_elem, elem)->semaphore);
+  }
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by

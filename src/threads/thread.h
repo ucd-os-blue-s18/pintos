@@ -139,8 +139,7 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 // Functions added for priority scheduler
-bool priority_less (const struct list_elem *a,
-                    const struct list_elem *b,
-                    void *aux UNUSED);
+struct thread *
+get_max_priority_thread(struct list * thread_list);
 
 #endif /* threads/thread.h */

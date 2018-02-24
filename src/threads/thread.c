@@ -71,6 +71,13 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+// Functions added for priority scheduler
+static bool thread_priority_less (const struct list_elem *a,
+                    const struct list_elem *b,
+                    void *aux UNUSED);
+
+struct thread *
+get_max_priority_thread(struct list * thread_list);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -486,13 +493,24 @@ alloc_frame (struct thread *t, size_t size)
 }
 
 // Priority comparator for list
-bool priority_less (const struct list_elem *a,
-                    const struct list_elem *b,
-                    void *aux UNUSED)
+static bool 
+thread_priority_less (const struct list_elem *a,
+               const struct list_elem *b,
+               void *aux UNUSED)
 {
   struct thread *ta = list_entry (a, struct thread, elem);
   struct thread *tb = list_entry (b, struct thread, elem);
   return (ta->priority < tb->priority) ? true : false;
+}
+
+// Returns the thread with highest priority from thread_list
+struct thread *
+get_max_priority_thread(struct list * thread_list)
+{
+    struct list_elem *max_elem = list_max (thread_list, thread_priority_less, NULL); 
+    struct thread *max_priority_thread = 
+      list_entry (max_elem, struct thread, elem);
+    return max_priority_thread;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -507,11 +525,8 @@ next_thread_to_run (void)
     return idle_thread;
   else
   {
-    struct list_elem *max_elem = list_max (&ready_list, priority_less, NULL); 
-    struct thread *max_priority_thread = 
-      list_entry (max_elem, struct thread, elem);
-    list_remove (max_elem);
-
+    struct thread *max_priority_thread = get_max_priority_thread (&ready_list);
+    list_remove (&max_priority_thread->elem);
     return max_priority_thread;
   }
 }
