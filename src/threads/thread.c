@@ -480,8 +480,8 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = t->base_priority = priority;
-  t->donations_held = 0;
   t->magic = THREAD_MAGIC;
+  list_init (&t->donation_locks);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
