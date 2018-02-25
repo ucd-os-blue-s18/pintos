@@ -32,6 +32,12 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+// Functions added for priority scheduling
+static bool
+cond_priority_less (const struct list_elem *a,
+                    const struct list_elem *b,
+                    void *aux UNUSED);
+                    
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -182,6 +188,7 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
+  lock->wasDonatedTo = false;
   sema_init (&lock->semaphore, 1);
 }
 
@@ -200,6 +207,12 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  int running_thread_priority = thread_get_priority ();
+  if (lock->holder && lock->holder->priority < running_thread_priority)
+  {
+    lock->holder->priority = running_thread_priority;
+    lock->wasDonatedTo = true;
+  }
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
 }
@@ -235,7 +248,11 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
+  if (lock->wasDonatedTo)
+    thread_current ()->priority = thread_current ()->base_priority;
+
   lock->holder = NULL;
+  lock->wasDonatedTo = false;
   sema_up (&lock->semaphore);
 }
 
