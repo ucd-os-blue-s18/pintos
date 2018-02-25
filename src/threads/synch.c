@@ -188,7 +188,7 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
-  lock->wasDonatedTo = false;
+  lock->donated_priority = 0;
   sema_init (&lock->semaphore, 1);
 }
 
@@ -207,12 +207,16 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  // Running thread needs to donate
   int running_thread_priority = thread_get_priority ();
   if (lock->holder && lock->holder->priority < running_thread_priority)
   {
-    lock->holder->priority = running_thread_priority;
-    lock->wasDonatedTo = true;
+    int donation = running_thread_priority - lock->holder->priority;
+    lock->donated_priority += donation;
+    lock->holder->priority += donation;
+    lock->holder->donations_held++;
   }
+
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
 }
@@ -248,11 +252,16 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (lock->wasDonatedTo)
-    thread_current ()->priority = thread_current ()->base_priority;
+  if (lock->holder->donations_held && lock->donated_priority > 0) {
+    if (lock->holder->donations_held > 1)
+      lock->holder->priority -= lock->donated_priority;
+    else if (lock->holder->donations_held == 1)
+      lock->holder->priority = lock->holder->base_priority;
+    lock->holder->donations_held--;
+  }
 
   lock->holder = NULL;
-  lock->wasDonatedTo = false;
+  lock->donated_priority = 0;
   sema_up (&lock->semaphore);
 }
 
