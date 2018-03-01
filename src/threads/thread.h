@@ -95,6 +95,7 @@ struct thread
     struct semaphore sleep_sema;        /*Semaphore for thread_sleep */
     struct list_elem sleep_elem;        /*Element for sleep_list in thread.c */
     int64_t wake_up_time;               /*When to wake from sleep_list */
+    struct list donation_locks;
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */

@@ -191,6 +191,7 @@ lock_init (struct lock *lock)
 
   lock->holder = NULL;
   lock->donated_priority = 0;
+  lock->received_donation = false;
   sema_init (&lock->semaphore, 1);
 }
 
@@ -210,13 +211,16 @@ lock_acquire (struct lock *lock)
   ASSERT (!lock_held_by_current_thread (lock));
 
   // Running thread needs to donate
-  int running_thread_priority = thread_get_priority ();
-  if (lock->holder && lock->holder->priority < running_thread_priority)
+  if (lock->holder && 
+      lock->holder->priority < thread_get_priority () && 
+      lock->donated_priority < thread_get_priority ())
   {
-    int donation = running_thread_priority - lock->holder->priority;
-    lock->donated_priority += donation;
-    lock->holder->priority += donation;
-    lock->holder->donations_held++;
+    if(!lock->received_donation)
+    {
+      list_push_back (&lock->holder->donation_locks, &lock->elem);
+      lock->received_donation = true;
+    }
+    lock->holder->priority = lock->donated_priority = thread_get_priority ();
   }
 
   sema_down (&lock->semaphore);
@@ -243,6 +247,17 @@ lock_try_acquire (struct lock *lock)
   return success;
 }
 
+// Priority comparator for list of locks
+static bool
+lock_priority_less (const struct list_elem *a,
+                    const struct list_elem *b,
+                    void *aux UNUSED)
+{
+  struct lock *la = list_entry (a, struct lock, elem);
+  struct lock *lb = list_entry (b, struct lock, elem);
+  return (la->donated_priority < lb->donated_priority) ? true : false;
+}
+
 /* Releases LOCK, which must be owned by the current thread.
 
    An interrupt handler cannot acquire a lock, so it does not
@@ -254,16 +269,26 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (lock->holder->donations_held && lock->donated_priority > 0) {
-    if (lock->holder->donations_held > 1)
-      lock->holder->priority -= lock->donated_priority;
-    else if (lock->holder->donations_held == 1)
+  if (lock->received_donation) {
+    list_remove (&lock->elem);
+
+    int donations_held = list_size(&lock->holder->donation_locks);
+    if (!donations_held)
       lock->holder->priority = lock->holder->base_priority;
-    lock->holder->donations_held--;
+    else
+    {
+      struct list_elem *max_elem = list_max (&lock->holder->donation_locks, lock_priority_less, NULL);
+      struct lock *max_priority_lock =
+        list_entry (max_elem, struct lock, elem);
+
+      lock->holder->priority = max_priority_lock->donated_priority;
+    }
+
+    lock->received_donation = false;
+    lock->donated_priority = 0;
   }
 
   lock->holder = NULL;
-  lock->donated_priority = 0;
   sema_up (&lock->semaphore);
 }
 

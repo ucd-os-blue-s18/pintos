@@ -345,7 +345,8 @@ void
 thread_set_priority (int new_priority)
 {
   // Thread has been donated priority
-  if (thread_get_priority () > thread_current ()->base_priority)
+  int donations_held = list_size (&running_thread ()->donation_locks);
+  if (donations_held)
     thread_current ()->base_priority = new_priority;
 
   // Thread has not been donated priority
@@ -480,7 +481,7 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = t->base_priority = priority;
-  t->donations_held = 0;
+  list_init(&t->donation_locks);
   t->magic = THREAD_MAGIC;
   t->wake_up_time = 0;
   sema_init(&t->sleep_sema, 0);
