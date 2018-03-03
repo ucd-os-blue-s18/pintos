@@ -38,6 +38,8 @@ cond_priority_less (const struct list_elem *a,
                     const struct list_elem *b,
                     void *aux UNUSED);
 
+void donate_nested (struct donation *donation) ;
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -190,11 +192,34 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
-  lock->donated_priority = 0;
-  lock->received_donation = false;
+  lock->donation.priority = PRI_MIN;
+  lock->donation.is_listed = false;
   sema_init (&lock->semaphore, 1);
 }
 
+void donate_nested (struct donation *donation) 
+{
+  if (list_empty (&donation->recipient->donations_given))
+    return;
+    
+  struct list_elem *e;
+
+  for (e = list_begin (&donation->recipient->donations_given);
+       e != list_end (&donation->recipient->donations_given);
+       e = list_next (e))
+  {
+    struct donation *nested_donation = 
+      list_entry (e, struct donation, donor_elem);
+
+    if (nested_donation->priority < donation->priority)
+    {
+      nested_donation->recipient->priority = 
+        nested_donation->priority =
+        donation->priority;
+      donate_nested (nested_donation);
+    }
+  }
+}
 /* Acquires LOCK, sleeping until it becomes available if
    necessary.  The lock must not already be held by the current
    thread.
@@ -212,15 +237,26 @@ lock_acquire (struct lock *lock)
 
   // Running thread needs to donate
   if (lock->holder && 
-      lock->holder->priority < thread_get_priority () && 
-      lock->donated_priority < thread_get_priority ())
+      lock->holder->priority < thread_get_priority () &&
+      lock->donation.priority < thread_get_priority ())
   {
-    if(!lock->received_donation)
+    if (lock->donation.is_listed)
     {
-      list_push_back (&lock->holder->donation_locks, &lock->elem);
-      lock->received_donation = true;
+      list_remove (&lock->donation.donor_elem);
+      list_remove (&lock->donation.recipient_elem);
     }
-    lock->holder->priority = lock->donated_priority = thread_get_priority ();
+    else
+      lock->donation.is_listed = true;
+
+    lock->donation.priority = thread_get_priority ();
+
+    list_push_back (&thread_current ()->donations_given, &lock->donation.donor_elem); 
+    
+    lock->donation.recipient = lock->holder;
+    lock->donation.recipient->priority = lock->donation.priority;
+    list_push_back (&lock->holder->donations_received, &lock->donation.recipient_elem); 
+
+    donate_nested (&lock->donation);
   }
 
   sema_down (&lock->semaphore);
@@ -247,15 +283,15 @@ lock_try_acquire (struct lock *lock)
   return success;
 }
 
-// Priority comparator for list of locks
+// Priority comparator for list of donations
 static bool
-lock_priority_less (const struct list_elem *a,
+donation_priority_less (const struct list_elem *a,
                     const struct list_elem *b,
                     void *aux UNUSED)
 {
-  struct lock *la = list_entry (a, struct lock, elem);
-  struct lock *lb = list_entry (b, struct lock, elem);
-  return (la->donated_priority < lb->donated_priority) ? true : false;
+  struct donation *da = list_entry (a, struct donation, recipient_elem);
+  struct donation *db = list_entry (b, struct donation, recipient_elem);
+  return (da->priority < db->priority) ? true : false;
 }
 
 /* Releases LOCK, which must be owned by the current thread.
@@ -269,23 +305,24 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (lock->received_donation) {
-    list_remove (&lock->elem);
+  if (lock->donation.is_listed) {
+    list_remove (&lock->donation.donor_elem);
+    list_remove (&lock->donation.recipient_elem);
 
-    int donations_held = list_size(&lock->holder->donation_locks);
-    if (!donations_held)
-      lock->holder->priority = lock->holder->base_priority;
+    if (list_empty (&thread_current ()->donations_received))
+      thread_current ()->priority = thread_current ()->base_priority;
     else
     {
-      struct list_elem *max_elem = list_max (&lock->holder->donation_locks, lock_priority_less, NULL);
-      struct lock *max_priority_lock =
-        list_entry (max_elem, struct lock, elem);
+      struct list_elem *max_elem = 
+        list_max (&thread_current ()->donations_received, donation_priority_less, NULL);
+      struct donation *max_priority_donation =
+        list_entry (max_elem, struct donation, recipient_elem);
 
-      lock->holder->priority = max_priority_lock->donated_priority;
+      thread_current ()->priority = max_priority_donation->priority;
     }
 
-    lock->received_donation = false;
-    lock->donated_priority = 0;
+    lock->donation.priority = PRI_MIN;
+    lock->donation.is_listed = false;
   }
 
   lock->holder = NULL;

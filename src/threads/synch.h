@@ -17,14 +17,21 @@ bool sema_try_down (struct semaphore *);
 void sema_up (struct semaphore *);
 void sema_self_test (void);
 
+struct donation
+  {
+    int priority;
+    struct thread *recipient;
+    struct list_elem donor_elem;
+    struct list_elem recipient_elem;
+    bool is_listed;
+  };
+
 /* Lock. */
 struct lock 
   {
     struct thread *holder;      /* Thread holding lock (for debugging). */
     struct semaphore semaphore; /* Binary semaphore controlling access. */
-    int donated_priority;
-    bool received_donation;
-    struct list_elem elem;
+    struct donation donation;
   };
 
 void lock_init (struct lock *);
