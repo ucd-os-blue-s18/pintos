@@ -58,20 +58,78 @@ Aaron Roberts <aaron.roberts@ucdenver.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+ ### `struct thread`
+ ```
+    // Priority
+    int priority;                       /* Priority. */
+    int base_priority;
+    struct list donations_given;
+    struct list donations_received;
+```
+- Priority was repurposed to represent effective priority. 
+- Base priority was added as a restore point when all received donations have been "returned".
+- Lists are maintained for donations received as well as given to facilitate the various donation scenarios.
+
+### `struct donation`
+This is a new data structure for tracking relevant data related to donations. It is used as a member in `struct lock`.
+```
+struct donation
+  {
+    int priority;
+    struct thread *recipient;
+    struct list_elem donor_elem;
+    struct list_elem recipient_elem;
+    bool is_listed;
+  };
+```
+- Priority is the value of the priority donated.
+- Recipient is used for recursive, or nested, donations.
+- The list elements allow threads to keep track of the donations they've made and received.
+- `is_listed` is essentially a check on whether this is a real donation, or a placeholder in a lock which hasn't currently been donated to.
+
+### `struct lock`
+```
+    struct donation donation;
+```
+- Ties data related to donations to the relevant lock. As the lock is the link between donors and recipients, it seemed the most logical place to put it.
+
 >> B2: Explain the data structure used to track priority donation.
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
 >> .png file.)
+
+Priority donation is tracked using `struct donation`, which is kept as a member of `struct lock`. Threads maintain two lists: donations made, and donations received. The `recipient` pointer in the donation can be followed to the recipient's list of donations made, and so on recursively, which allows nested donations.
+
+```
+Scenario from priority-donate-nest, with locks {a, b} and threads {L. M. H}. L holds a, M holds b. Donation operations numbered in order.
+
+L:  a <-----------<
+    ^             |
+    |(1: M to L)  |(2: H to M to L)
+    |             |
+M:--|    b--------^
+         ^
+         |
+H:-------|
+```
 
 ---- ALGORITHMS ----
 
 >> B3: How do you ensure that the highest priority thread waiting for
 >> a lock, semaphore, or condition variable wakes up first?
 
+For semaphores (and by extension locks) this is accomplished using a `get_max_priority_thread` function, which takes a list of threads and runs `list_max` on it using a comparator on priority. The thread is then removed from its waiting list and unblocked. Condition variables work similarly, except now there is a list of lists (as the condition variable holds a list of semaphores). This required another comparator, which compares max values in each sub-list across the parent list.
+
 >> B4: Describe the sequence of events when a call to lock_acquire()
 >> causes a priority donation.  How is nested donation handled?
 
+In this scenario, `lock_acquire` simply manipulates the members of `struct donation`. It will adjust the list elements based on the lock holder and the current thread, augment the donation's priority value, set the `is_listed` flag (if necessary), and finally augment the lock holder's priority.
+
+Nested donation is then handled by a recursive function, `donate_nested`. This function is called every time a donation is made. The base case is that the `struct donation` passed into it has a recipient who has made no donations. Otherwise, the function iterates through the recipient's list of donations made. Each time it finds a (now nested) donation with a lower priority than the donation originally passed into the function, it augments that donation's priority, and recursively calls itself on that nested donation. 
+
 >> B5: Describe the sequence of events when lock_release() is called
 >> on a lock that a higher-priority thread is waiting for.
+
+Here, `lock_release` will remove its `struct donation` from both the donor and receipients' lists. If the running thread no longer holds any donations, it returns to its base priority. Otherwise, it finds the max priority donation that it still holds, and lowers itself to that priority. Finally, a few bookkeeping values in `struct donation` are reset.  
 
 ---- SYNCHRONIZATION ----
 
@@ -79,10 +137,16 @@ Aaron Roberts <aaron.roberts@ucdenver.edu>
 >> how your implementation avoids it.  Can you use a lock to avoid
 >> this race?
 
+As this was not an obstacle to passing any tests, it was not an issue we addressed. Since the function must know whether the current thread has received any donations before deciding whether to set both the effective and base priorities, the size of the `donations_received` list must be checked. Pintos lists are noted in the documentation as not being thread safe, so this could cause a race condition in which a thread may or may not correctly set its effective priority. Tying this to a lock would be challenging considering locks themselves depend on this list.
+
 ---- RATIONALE ----
 
 >> B7: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+The design, inasmuch as it exists for this task, is primarily based around preserving the original structure of the threading system. As such, the implementation was largely an augmentation of already existing systems.
+
+The only significant addition was `struct donation`. Initially, that data was just kept in the lock, but eventually it made sense to abstract it into its own data structure, just to make it easier to work with. As a lock can only have one holder, and only one effective donation, it made sense to keep that data attached to the lock, and then manage lists of those donations in `struct thread`. Some prior implementations which passed earlier donation tests had more complicated logic around tracking changes in donation, but that turned out to be untenable for handling nested donations. Ultimately, it's a straightforward design which made it easier to reason about when building the `donate_nested` function.
 
 			  ADVANCED SCHEDULER
 			  ==================

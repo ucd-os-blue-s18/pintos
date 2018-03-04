@@ -236,9 +236,7 @@ lock_acquire (struct lock *lock)
   ASSERT (!lock_held_by_current_thread (lock));
 
   // Running thread needs to donate
-  if (lock->holder && 
-      lock->holder->priority < thread_get_priority () &&
-      lock->donation.priority < thread_get_priority ())
+  if (lock->holder && lock->donation.priority < thread_get_priority ())
   {
     if (lock->donation.is_listed)
     {
