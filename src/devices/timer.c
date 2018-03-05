@@ -196,6 +196,22 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+  // if(thread_mlfqs){
+  //
+  //   //update priority for all threads
+  //   if(ticks % 4 == 0){
+  //     thread_foreach(mlfqs_priority, NULL);
+  //   }
+  //
+  //   if(ticks % TIMER_FREQ == 0){
+  //     //update load_avg
+  //     update_load_avg();
+  //     //update recent_cpu
+  //     thread_foreach(update_recent_cpu, NULL);
+  //
+  //   }
+  // }
+
   bool check = true;
   while (check){
     if (!list_empty(&sleep_list)) {

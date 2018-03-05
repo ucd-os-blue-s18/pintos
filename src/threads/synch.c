@@ -197,23 +197,23 @@ lock_init (struct lock *lock)
   sema_init (&lock->semaphore, 1);
 }
 
-void donate_nested (struct donation *donation) 
+void donate_nested (struct donation *donation)
 {
   if (list_empty (&donation->recipient->donations_given))
     return;
-    
+
   struct list_elem *e;
 
   for (e = list_begin (&donation->recipient->donations_given);
        e != list_end (&donation->recipient->donations_given);
        e = list_next (e))
   {
-    struct donation *nested_donation = 
+    struct donation *nested_donation =
       list_entry (e, struct donation, donor_elem);
 
     if (nested_donation->priority < donation->priority)
     {
-      nested_donation->recipient->priority = 
+      nested_donation->recipient->priority =
         nested_donation->priority =
         donation->priority;
       donate_nested (nested_donation);
@@ -236,7 +236,7 @@ lock_acquire (struct lock *lock)
   ASSERT (!lock_held_by_current_thread (lock));
 
   // Running thread needs to donate
-  if (lock->holder && lock->donation.priority < thread_get_priority ())
+  if (!thread_mlfqs && lock->holder && lock->donation.priority < thread_get_priority ())
   {
     if (lock->donation.is_listed)
     {
@@ -248,11 +248,11 @@ lock_acquire (struct lock *lock)
 
     lock->donation.priority = thread_get_priority ();
 
-    list_push_back (&thread_current ()->donations_given, &lock->donation.donor_elem); 
-    
+    list_push_back (&thread_current ()->donations_given, &lock->donation.donor_elem);
+
     lock->donation.recipient = lock->holder;
     lock->donation.recipient->priority = lock->donation.priority;
-    list_push_back (&lock->holder->donations_received, &lock->donation.recipient_elem); 
+    list_push_back (&lock->holder->donations_received, &lock->donation.recipient_elem);
 
     donate_nested (&lock->donation);
   }
@@ -303,7 +303,7 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (lock->donation.is_listed) {
+  if (!thread_mlfqs && lock->donation.is_listed) {
     list_remove (&lock->donation.donor_elem);
     list_remove (&lock->donation.recipient_elem);
 
@@ -311,7 +311,7 @@ lock_release (struct lock *lock)
       thread_current ()->priority = thread_current ()->base_priority;
     else
     {
-      struct list_elem *max_elem = 
+      struct list_elem *max_elem =
         list_max (&thread_current ()->donations_received, donation_priority_less, NULL);
       struct donation *max_priority_donation =
         list_entry (max_elem, struct donation, recipient_elem);

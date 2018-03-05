@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/synch.h"
+#include "threads/fixed-point.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -101,6 +102,10 @@ struct thread
     struct list donations_given;
     struct list donations_received;
 
+    // mlfqs
+    int nice;
+    struct fixP recent_cpu;
+
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
@@ -152,5 +157,13 @@ int thread_get_load_avg (void);
 // Functions added for priority scheduler
 struct thread *
 get_max_priority_thread(struct list * thread_list);
+
+//mlfqs
+void
+mlfqs_priority(struct thread * t, void *aux);
+void
+update_load_avg(void);
+void
+update_recent_cpu(struct thread * t, void *aux);
 
 #endif /* threads/thread.h */
