@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -136,7 +137,21 @@ void
 thread_tick (void)
 {
   struct thread *t = thread_current ();
+  if(thread_mlfqs){
+    t->recent_cpu = fixedIntAdd(t->recent_cpu, 1);
+    //update priority for all threads
+    if(timer_ticks() % 4 == 0){
+      thread_foreach(mlfqs_priority, NULL);
+    }
 
+    if(timer_ticks() % TIMER_FREQ == 0){
+      //update load_avg
+      update_load_avg();
+      //update recent_cpu
+      thread_foreach(update_recent_cpu, NULL);
+
+    }
+  }
   /* Update statistics. */
   if (t == idle_thread)
     idle_ticks++;
@@ -144,11 +159,9 @@ thread_tick (void)
 #ifdef USERPROG
   else if (t->pagedir != NULL)
     user_ticks++;
-    t->recent_cpu = fixedIntAdd(t->recent_cpu, 1);
 #endif
   else
     kernel_ticks++;
-    t->recent_cpu = fixedIntAdd(t->recent_cpu, 1);
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -214,9 +227,6 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
-  /* mlfqs */
-  setToInt(&t->recent_cpu, fixedToInt(thread_current()->recent_cpu));
-  t->nice = thread_current()->nice;
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -357,9 +367,7 @@ void
 thread_set_priority (int new_priority)
 {
   if(thread_mlfqs){
-    thread_current()->priority = new_priority;
-    //intr_yield_on_return();
-    thread_yield();
+    //Nothing Done
   }
   else{
     // Thread has been donated priority
@@ -388,20 +396,11 @@ void
 thread_set_nice (int new_nice)
 {
   struct thread * t = thread_current();
+  int old_priority = t->priority;
   t->nice = new_nice;
-  int new_priority = PRI_MAX - fixedToInt((fixedIntSub(fixedIntDiv(t->recent_cpu, 4), t->nice * 2)));
-
-  if(new_priority > PRI_MAX)
-  {
-    new_priority = PRI_MAX;
-  }
-  else if (new_priority < PRI_MIN)
-  {
-    new_priority = PRI_MIN;
-  }
-
-  if(new_priority != t->priority){
-    thread_set_priority(new_priority);
+  mlfqs_priority(t, NULL);
+  if(old_priority > t->priority){
+    thread_yield();
   }
 }
 
@@ -512,7 +511,14 @@ init_thread (struct thread *t, const char *name, int priority)
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
-  t->priority = t->base_priority = priority;
+  if(thread_mlfqs && list_size(&all_list) > 1){
+    setToInt(&t->recent_cpu, fixedToInt(thread_current()->recent_cpu));
+    t->nice = thread_current()->nice;
+    mlfqs_priority(t, NULL);
+  }
+  else{
+    t->priority = t->base_priority = priority;
+  }
   list_init(&t->donations_given);
   list_init(&t->donations_received);
   t->magic = THREAD_MAGIC;
