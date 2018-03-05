@@ -54,6 +54,8 @@ static long long user_ticks;    /* # of timer ticks in user programs. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
 
+struct fixP load_avg;
+
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
@@ -106,6 +108,9 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+  initial_thread->nice = 0;
+  setToInt(&initial_thread->recent_cpu, 0);
+  setToInt(&load_avg, 0);
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -135,12 +140,15 @@ thread_tick (void)
   /* Update statistics. */
   if (t == idle_thread)
     idle_ticks++;
+
 #ifdef USERPROG
   else if (t->pagedir != NULL)
     user_ticks++;
+    t->recent_cpu = fixedIntAdd(t->recent_cpu, 1);
 #endif
   else
     kernel_ticks++;
+    t->recent_cpu = fixedIntAdd(t->recent_cpu, 1);
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -205,6 +213,10 @@ thread_create (const char *name, int priority,
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
   sf->ebp = 0;
+
+  /* mlfqs */
+  setToInt(&t->recent_cpu, fixedToInt(thread_current()->recent_cpu));
+  t->nice = thread_current()->nice;
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -344,16 +356,23 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority)
 {
-  // Thread has been donated priority
-  int donations_held = list_size (&thread_current ()->donations_received);
-  if (donations_held)
-    thread_current ()->base_priority = new_priority;
+  if(thread_mlfqs){
+    thread_current()->priority = new_priority;
+    //intr_yield_on_return();
+    thread_yield();
+  }
+  else{
+    // Thread has been donated priority
+    int donations_held = list_size (&thread_current ()->donations_received);
+    if (donations_held)
+      thread_current ()->base_priority = new_priority;
 
-  // Thread has not been donated priority
-  else
-  {
-    thread_current ()->priority = thread_current ()->base_priority = new_priority;
-    thread_yield ();
+    // Thread has not been donated priority
+    else
+    {
+      thread_current ()->priority = thread_current ()->base_priority = new_priority;
+      thread_yield ();
+    }
   }
 }
 
@@ -366,32 +385,45 @@ thread_get_priority (void)
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED)
+thread_set_nice (int new_nice)
 {
-  /* Not yet implemented. */
+  struct thread * t = thread_current();
+  t->nice = new_nice;
+  int new_priority = PRI_MAX - fixedToInt((fixedIntSub(fixedIntDiv(t->recent_cpu, 4), t->nice * 2)));
+
+  if(new_priority > PRI_MAX)
+  {
+    new_priority = PRI_MAX;
+  }
+  else if (new_priority < PRI_MIN)
+  {
+    new_priority = PRI_MIN;
+  }
+
+  if(new_priority != t->priority){
+    thread_set_priority(new_priority);
+  }
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return fixedToIntRound(fixedIntMult (load_avg, 100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void)
 {
-  /* Not yet implemented. */
+  return fixedToIntRound(fixedIntMult (thread_current()->recent_cpu, 100));
   return 0;
 }
 
@@ -626,6 +658,50 @@ allocate_tid (void)
 
   return tid;
 }
+
+/* Calculates mlfqs priority for thread */
+void
+mlfqs_priority(struct thread * t, void *aux)
+{
+  //printf("p1\n");
+  int new_priority = PRI_MAX - fixedToInt((fixedIntSub(fixedIntDiv(t->recent_cpu, 4), t->nice * 2)));
+  if(new_priority > PRI_MAX)
+  {
+    new_priority = PRI_MAX;
+  }
+  else if (new_priority < PRI_MIN)
+  {
+    new_priority = PRI_MIN;
+  }
+
+  if(new_priority != t->priority){
+    t->priority = new_priority;
+  }
+}
+
+/* Calculates new load_avg and updates */
+void
+update_load_avg(void) {
+  //printf("p2\n");
+  int ready_running_threads = list_size(&ready_list);
+  if(thread_current() != idle_thread){
+    ready_running_threads += 1;
+  }
+  load_avg = fixedAdd(fixedIntDiv(fixedIntMult(load_avg, 59), 60), fixedIntDiv(intToFixed(ready_running_threads), 60));
+  //printf("%d\n", thread_get_load_avg() );
+}
+
+/*Update recent_cpu */
+void
+update_recent_cpu(struct thread * t, void *aux)
+{
+  //printf("p3\n");
+  struct fixP coefficient;
+  coefficient = fixedDiv(fixedIntMult(load_avg, 2), fixedIntAdd(fixedIntMult(load_avg, 2), 1));
+  t->recent_cpu = fixedIntAdd(fixedMult(coefficient, t->recent_cpu), t->nice);
+  //printf("%d\n",t->recent_cpu);
+}
+
 
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
