@@ -136,9 +136,13 @@ thread_start (void)
 void
 thread_tick (void)
 {
+  enum intr_level old_level = intr_disable();
+
   struct thread *t = thread_current ();
   if(thread_mlfqs){
-    t->recent_cpu = fixedIntAdd(t->recent_cpu, 1);
+    if (t != idle_thread){
+      t->recent_cpu = fixedIntAdd(t->recent_cpu, 1);
+    }
     //update priority for all threads
     if(timer_ticks() % 4 == 0){
       thread_foreach(mlfqs_priority, NULL);
@@ -149,9 +153,11 @@ thread_tick (void)
       update_load_avg();
       //update recent_cpu
       thread_foreach(update_recent_cpu, NULL);
-
     }
+
   }
+  intr_set_level(old_level);
+
   /* Update statistics. */
   if (t == idle_thread)
     idle_ticks++;
