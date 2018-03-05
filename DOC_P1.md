@@ -3,7 +3,7 @@
 			| PROJECT 1: THREADS |
 			|   DESIGN DOCUMENT  |
 			+--------------------+
-				   
+
 ---- GROUP ----
 
 Teo Price-Broncucia <teo.price-broncucia@ucdenver.edu>
@@ -27,27 +27,47 @@ Aaron Roberts <aaron.roberts@ucdenver.edu>
 >> A1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+struct list sleep_list;
+//This holds a list of all sleeping threads sorted by wake-up time.
+int64_t wake_up_time
+//This is part of the thread struct and holds a wake up time for a thread
+list_elem sleep_elem
+//This is also part of the thread struct and holds place in the sleep lists
+semaphore sleep_sema
+//Part of thread struct. Used to track wake up time.
+
+
 
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
+//When timer_sleep is called first, a wake up time is calculated. Then
+//an Assert confirms interrupts are turned on. Then the thread variables are
+updated and the thread is added to the sleep list in order of its wake up time.
+Finally sema_down() is called on the thread's sleep_sema.
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
+As the list of sleeping threads is ordered the interrupt only needs to check
+the minimum number of threads.
 
 ---- SYNCHRONIZATION ----
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
+//This is not handled currently.
 
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
+//This is not handled currently.
 
 ---- RATIONALE ----
 
 >> A6: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+//This seemed to allow the minimum extra data to be stored while still allowing
+the list to be sorted in a way that made the interrupt efficient.
 
 			 PRIORITY SCHEDULING
 			 ===================
@@ -66,7 +86,7 @@ Aaron Roberts <aaron.roberts@ucdenver.edu>
     struct list donations_given;
     struct list donations_received;
 ```
-- Priority was repurposed to represent effective priority. 
+- Priority was repurposed to represent effective priority.
 - Base priority was added as a restore point when all received donations have been "returned".
 - Lists are maintained for donations received as well as given to facilitate the various donation scenarios.
 
@@ -124,7 +144,7 @@ For semaphores (and by extension locks) this is accomplished using a `get_max_pr
 
 In this scenario, `lock_acquire` simply manipulates the members of `struct donation`. It will adjust the list elements based on the lock holder and the current thread, augment the donation's priority value, set the `is_listed` flag (if necessary), and finally augment the lock holder's priority.
 
-Nested donation is then handled by a recursive function, `donate_nested`. This function is called every time a donation is made. The base case is that the `struct donation` passed into it has a recipient who has made no donations. Otherwise, the function iterates through the recipient's list of donations made. Each time it finds a (now nested) donation with a lower priority than the donation originally passed into the function, it augments that donation's priority, and recursively calls itself on that nested donation. 
+Nested donation is then handled by a recursive function, `donate_nested`. This function is called every time a donation is made. The base case is that the `struct donation` passed into it has a recipient who has made no donations. Otherwise, the function iterates through the recipient's list of donations made. Each time it finds a (now nested) donation with a lower priority than the donation originally passed into the function, it augments that donation's priority, and recursively calls itself on that nested donation.
 
 >> B5: Describe the sequence of events when lock_release() is called
 >> on a lock that a higher-priority thread is waiting for.
@@ -156,6 +176,10 @@ The only significant addition was `struct donation`. Initially, that data was ju
 >> C1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+In the thread struct nice and recent_cpu are added. There is also a global
+variable in Timer.c load_avg. All of these are used in numerous calculations
+for the mlfqs scheduler. There is also a new struct fixP which holds fixed point
+values in 17.14 format.
 
 ---- ALGORITHMS ----
 
@@ -167,11 +191,11 @@ The only significant addition was `struct donation`. Initially, that data was ju
 timer  recent_cpu    priority   thread
 ticks   A   B   C   A   B   C   to run
 -----  --  --  --  --  --  --   ------
- 0
- 4
- 8
-12
-16
+ 0			0		0		0		63	61	59			A
+ 4			4		0		0		62	61	59			A
+ 8			8		0		0		61	61	59			A
+12			12	0		0		60	61	59			B
+16		etc
 20
 24
 28
@@ -181,9 +205,13 @@ ticks   A   B   C   A   B   C   to run
 >> C3: Did any ambiguities in the scheduler specification make values
 >> in the table uncertain?  If so, what rule did you use to resolve
 >> them?  Does this match the behavior of your scheduler?
+It made the thread to run when the priorities are equal slightly uncertain
+it would seem this would depend on the order they were added to the ready list.
 
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
+Tried to do as little calculation inside the interrupt context as possible so
+no ticks or interrupts are missed. This should improve performance
 
 ---- RATIONALE ----
 
@@ -191,6 +219,10 @@ ticks   A   B   C   A   B   C   to run
 >> disadvantages in your design choices.  If you were to have extra
 >> time to work on this part of the project, how might you choose to
 >> refine or improve your design?
+The fixed-point math is fairly clunky and makes Order of operations errors
+likely as we experienced. It would be good to improve. Interrupt disables could  
+likely be improved as well. Doing the design of other parts with MLFQS would possibly have helped
+
 
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
@@ -198,7 +230,8 @@ ticks   A   B   C   A   B   C   to run
 >> abstraction layer for fixed-point math, that is, an abstract data
 >> type and/or a set of functions or macros to manipulate fixed-point
 >> numbers, why did you do so?  If not, why not?
-
+We did create a fixP struct to hold the data type. We didn't want to be possibly
+making errors in the fixed-p math by redoing the conversions every time.
 			   SURVEY QUESTIONS
 			   ================
 
@@ -210,9 +243,16 @@ the quarter.
 
 >> In your opinion, was this assignment, or any one of the three problems
 >> in it, too easy or too hard?  Did it take too long or too little time?
-
+It took a fairly long time 40 - 50 hours of coding for the alarm and
+mlfqs portions alone. That doesn't really include time just wrapping one's head around
+pintos layout and functions. But not all of that time seemed super productive.
+I think a collation of frequent stupid problems from the past could have been helpful.
+Slack was useful because often someone else had run into a similar problem. I think a
+formalized version of this could help people focus on the learning parts as opposed to
+dumb confusions.
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
+
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
@@ -220,5 +260,6 @@ the quarter.
 
 >> Do you have any suggestions for the TAs to more effectively assist
 >> students, either for future quarters or the remaining projects?
+?
 
 >> Any other comments?

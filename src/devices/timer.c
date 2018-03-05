@@ -113,7 +113,7 @@ timer_sleep (int64_t ticks)
 
   ASSERT (intr_get_level () == INTR_ON);
 
-  //printf("Adding to sleep list\n");
+
   struct thread *cur = thread_current();
   cur->wake_up_time = wake_up_temp;
   list_insert_ordered(&sleep_list, &cur->sleep_elem, wake_time_less, NULL);
@@ -196,21 +196,6 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
-  // if(thread_mlfqs){
-  //
-  //   //update priority for all threads
-  //   if(ticks % 4 == 0){
-  //     thread_foreach(mlfqs_priority, NULL);
-  //   }
-  //
-  //   if(ticks % TIMER_FREQ == 0){
-  //     //update load_avg
-  //     update_load_avg();
-  //     //update recent_cpu
-  //     thread_foreach(update_recent_cpu, NULL);
-  //
-  //   }
-  // }
 
   bool check = true;
   while (check){
