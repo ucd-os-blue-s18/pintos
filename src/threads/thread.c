@@ -106,11 +106,11 @@ thread_init (void)
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
+  setToInt(&initial_thread->recent_cpu, 0);
+  initial_thread->nice = 0;
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
-  initial_thread->nice = 0;
-  setToInt(&initial_thread->recent_cpu, 0);
   setToInt(&load_avg, 0);
 }
 
@@ -511,9 +511,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
-  if(thread_mlfqs && list_size(&all_list) > 1){
-    setToInt(&t->recent_cpu, fixedToInt(thread_current()->recent_cpu));
-    t->nice = thread_current()->nice;
+  if(thread_mlfqs){
+    setToInt(&t->recent_cpu, fixedToInt(running_thread ()->recent_cpu));
+    t->nice = running_thread ()->nice;
     mlfqs_priority(t, NULL);
   }
   else{
@@ -670,7 +670,9 @@ void
 mlfqs_priority(struct thread * t, void *aux)
 {
   //printf("p1\n");
-  int new_priority = PRI_MAX - fixedToInt((fixedIntSub(fixedIntDiv(t->recent_cpu, 4), t->nice * 2)));
+  int new_priority = fixedToInt (fixedSub (
+    intToFixed (PRI_MAX - (t->nice * 2)),
+    fixedIntDiv(t->recent_cpu, 4)));
   if(new_priority > PRI_MAX)
   {
     new_priority = PRI_MAX;
